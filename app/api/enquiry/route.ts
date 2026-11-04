@@ -37,6 +37,24 @@ export async function POST(request: Request) {
     await put('enquiries/'+new Date().toISOString().slice(0,10)+'/'+randomUUID()+'.json',JSON.stringify(enquiry),{
       access:'private',contentType:'application/json',addRandomSuffix:false
     });
+    // Optional authenticated transactional email delivery. Storage succeeds independently.
+    if (process.env.RESEND_API_KEY && process.env.ENQUIRY_FROM_EMAIL) {
+      try {
+        const reply = await fetch('https://api.resend.com/emails', {
+          method:'POST',
+          headers:{Authorization:'Bearer '+process.env.RESEND_API_KEY,'Content-Type':'application/json'},
+          body:JSON.stringify({
+            from:process.env.ENQUIRY_FROM_EMAIL,
+            to:['prempugh@gmail.com'],
+            reply_to:email,
+            subject:'New Creative Studio enquiry — '+project_type,
+            text:'New website enquiry\\n\\nName: '+name+'\\nEmail: '+email+'\\nProject: '+project_type+'\\nBudget: '+(budget||'Not specified')+'\\n\\n'+message
+          }),
+          signal:AbortSignal.timeout(6500)
+        });
+        if (!reply.ok) console.error('Enquiry notification provider rejected request',reply.status);
+      } catch(e) { console.error('Enquiry email notification failed',e instanceof Error?e.message:'unknown error'); }
+    }
     return NextResponse.redirect(new URL('/contact/thank-you',request.url),303);
   } catch(e) {
     console.error('Project enquiry storage error',e instanceof Error?e.message:'unknown error');
